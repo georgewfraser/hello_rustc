@@ -2,6 +2,7 @@
 
 extern crate getopts;
 extern crate rustc;
+extern crate rustc_ast;
 extern crate rustc_error_codes;
 extern crate rustc_errors;
 extern crate rustc_hash;
@@ -10,12 +11,15 @@ extern crate rustc_span;
 
 use self::rustc::session;
 use self::rustc::session::config;
+use self::rustc_ast::ast;
 use self::rustc_interface::interface;
 use rustc_errors::registry;
 use rustc_hash::{FxHashMap, FxHashSet};
 use rustc_span::source_map;
 
 fn main() {
+    let filename = "main.rs";
+    let contents = "fn main() { println!(\"hello, world!\"); }";
     let errors = registry::Registry::new(&rustc_error_codes::DIAGNOSTICS);
     let config = interface::Config {
         // Command line options
@@ -28,8 +32,8 @@ fn main() {
         crate_cfg: FxHashSet::default(),
 
         input: config::Input::Str {
-            name: source_map::FileName::Custom(String::from("main.rs")),
-            input: String::from("fn main() { println!(\"hello, world!\"); }"),
+            name: source_map::FileName::Custom(String::from(filename)),
+            input: String::from(contents),
         },
         // Option<PathBuf>
         input_path: None,
@@ -69,6 +73,9 @@ fn main() {
         registry: errors,
     };
     interface::run_compiler(config, |compiler| {
-        println!("Hello, world!");
+        compiler.enter(|queries| {
+            let parse = queries.parse().unwrap().take();
+            println!("{:?}", parse);
+        });
     });
 }

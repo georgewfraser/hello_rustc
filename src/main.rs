@@ -76,6 +76,8 @@ fn main() {
         compiler.enter(|queries| {
             let parse = queries.parse().unwrap().take();
             println!("{:?}", parse);
+            let (hir, _) = queries.lower_to_hir().unwrap().take();
+            println!("{:?}", hir);
         });
     });
 }

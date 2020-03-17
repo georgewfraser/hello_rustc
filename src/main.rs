@@ -1,29 +1,37 @@
 #![feature(rustc_private)]
 
-extern crate getopts;
 extern crate rustc;
-extern crate rustc_ast;
 extern crate rustc_error_codes;
 extern crate rustc_errors;
 extern crate rustc_hash;
+extern crate rustc_hir;
 extern crate rustc_interface;
 extern crate rustc_span;
 
-use self::rustc::session;
-use self::rustc::session::config;
-use self::rustc_ast::ast;
-use self::rustc_interface::interface;
+use rustc::session;
+use rustc::session::config;
 use rustc_errors::registry;
 use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_interface::interface;
 use rustc_span::source_map;
+use std::path;
+use std::process;
+use std::str;
 
 fn main() {
+    let out = process::Command::new("rustc")
+        .arg("--print=sysroot")
+        .current_dir(".")
+        .output()
+        .unwrap();
+    let sysroot = str::from_utf8(&out.stdout).unwrap().trim();
     let filename = "main.rs";
-    let contents = "fn main() { println!(\"hello, world!\"); }";
+    let contents = "static HELLO: &str = \"Hello, world!\"; fn main() { println!(\"{}\", HELLO); }";
     let errors = registry::Registry::new(&rustc_error_codes::DIAGNOSTICS);
     let config = interface::Config {
         // Command line options
         opts: config::Options {
+            maybe_sysroot: Some(path::PathBuf::from(sysroot)),
             ..config::Options::default()
         },
 
@@ -74,10 +82,22 @@ fn main() {
     };
     interface::run_compiler(config, |compiler| {
         compiler.enter(|queries| {
+            // Parse the program and print the syntax tree.
             let parse = queries.parse().unwrap().take();
-            println!("{:?}", parse);
-            let (hir, _) = queries.lower_to_hir().unwrap().take();
-            println!("{:?}", hir);
+            println!("{:#?}", parse);
+            // Analyze the program and inspect the types of definitions.
+            queries.global_ctxt().unwrap().take().enter(|ctx| {
+                for (_, item) in &ctx.hir().krate().items {
+                    match item.kind {
+                        rustc_hir::ItemKind::Static(_, _, _) | rustc_hir::ItemKind::Fn(_, _, _) => {
+                            let name = item.ident;
+                            let ty = ctx.type_of(ctx.hir().local_def_id(item.hir_id));
+                            println!("{:?}:\t{:?}", name, ty)
+                        }
+                        _ => (),
+                    }
+                }
+            })
         });
     });
 }
